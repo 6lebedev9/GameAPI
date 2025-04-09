@@ -1,0 +1,4 @@
+@GameAPI_HostAddress = http://localhost:5028
+
+GET {{GameAPI_HostAddress}}/new-endpoint
+Accept: application/json
