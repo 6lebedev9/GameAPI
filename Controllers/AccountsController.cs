@@ -129,21 +129,31 @@ namespace GameAPI.Controllers
         [Authorize]
         [HttpPut("update-email")]
         public async Task<ActionResult<AuthResponse>> UpdateEmail(
-    [FromBody] UpdateEmailDto updateDto)
+            [FromBody] UpdateEmailDto updateDto)
         {
+            var tgIdClaim = User.FindFirstValue("TgId") ??
+                throw new InvalidOperationException("TgId claim not found");
+
+            if (!long.TryParse(tgIdClaim, out var tgId))
+                return Unauthorized(AuthResponse.ErrorResponse("Invalid TgId in token"));
+
             var token = await _context.Tokens
                 .FirstOrDefaultAsync(t =>
                     t.TgToken == updateDto.TgToken &&
-                    t.TgId == long.Parse(User.FindFirstValue("TgId")) &&
+                    t.TgId == tgId &&
                     !t.IsUsed &&
                     t.ExpiredAt > DateTime.UtcNow);
 
             if (token == null)
                 return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
 
-            var accountId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
-            var account = await _context.Accounts.FindAsync(accountId);
+            var accountIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                throw new InvalidOperationException("NameIdentifier claim not found");
 
+            if (!int.TryParse(accountIdClaim, out var accountId))
+                return Unauthorized(AuthResponse.ErrorResponse("Invalid account ID"));
+
+            var account = await _context.Accounts.FindAsync(accountId);
             if (account == null)
                 return NotFound(AuthResponse.ErrorResponse("Account not found"));
 
@@ -167,19 +177,29 @@ namespace GameAPI.Controllers
         public async Task<ActionResult<AuthResponse>> UpdatePassword(
             [FromBody] UpdatePasswordDto updateDto)
         {
+            var tgIdClaim = User.FindFirstValue("TgId") ??
+                throw new InvalidOperationException("TgId claim not found");
+
+            if (!long.TryParse(tgIdClaim, out var tgId))
+                return Unauthorized(AuthResponse.ErrorResponse("Invalid TgId in token"));
+
             var token = await _context.Tokens
                 .FirstOrDefaultAsync(t =>
                     t.TgToken == updateDto.TgToken &&
-                    t.TgId == long.Parse(User.FindFirstValue("TgId")) &&
+                    t.TgId == tgId &&
                     !t.IsUsed &&
                     t.ExpiredAt > DateTime.UtcNow);
 
             if (token == null)
                 return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
 
-            var accountId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
-            var account = await _context.Accounts.FindAsync(accountId);
+            var accountIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
+                throw new InvalidOperationException("NameIdentifier claim not found");
 
+            if (!int.TryParse(accountIdClaim, out var accountId))
+                return Unauthorized(AuthResponse.ErrorResponse("Invalid account ID"));
+
+            var account = await _context.Accounts.FindAsync(accountId);
             if (account == null)
                 return NotFound(AuthResponse.ErrorResponse("Account not found"));
 
@@ -199,22 +219,24 @@ namespace GameAPI.Controllers
         #region addictive methods
         private string GenerateJwtToken(Account account)
         {
+            var jwtKey = _config["Jwt:Key"] ??
+                throw new InvalidOperationException("JWT Key not configured");
+
             var claims = new[]
             {
                 new Claim(ClaimTypes.NameIdentifier, account.AccountId.ToString()),
-                new Claim(ClaimTypes.Email, account.Email),
+                new Claim(ClaimTypes.Email, account.Email ?? string.Empty),
                 new Claim("TgId", account.TgId.ToString()),
                 new Claim("Role", account.Role.ToString())
             };
 
-            var key = new SymmetricSecurityKey(
-                Encoding.UTF8.GetBytes(_config["Jwt:Key"]));
+            var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtKey));
             var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
             var expiry = DateTime.UtcNow.AddDays(1);
 
             var token = new JwtSecurityToken(
-                _config["Jwt:Issuer"],
-                _config["Jwt:Audience"],
+                _config["Jwt:Issuer"] ?? throw new InvalidOperationException("JWT Issuer not configured"),
+                _config["Jwt:Audience"] ?? throw new InvalidOperationException("JWT Audience not configured"),
                 claims,
                 expires: expiry,
                 signingCredentials: creds);
