@@ -151,7 +151,10 @@ namespace GameAPI.Controllers
                 if (token == null)
                     return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
 
-                var accountId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+                var accountidchecker = User.FindFirstValue(ClaimTypes.NameIdentifier);
+                if (accountidchecker == null) { return NotFound(AuthResponse.ErrorResponse("Null account - not found")); }
+
+                var accountId = int.Parse(accountidchecker);
                 var account = await _context.Accounts
                     .AsTracking()
                     .FirstOrDefaultAsync(a => a.AccountId == accountId);
