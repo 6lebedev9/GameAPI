@@ -244,40 +244,6 @@ namespace GameAPI.Controllers
         }
         #endregion
 
-        [HttpPost("update-email-manual")]
-        public IActionResult UpdateEmailManual([FromQuery] int accountId, [FromQuery] string newEmail)
-        {
-            try
-            {
-                var connectionString = _context.Database.GetConnectionString();
-                using var connection = new SqlConnection(connectionString);
-                connection.Open();
-
-                using var command = new SqlCommand(
-                    "UPDATE Accounts SET Email = @email WHERE AccountId = @id",
-                    connection);
-
-                command.Parameters.AddWithValue("@id", accountId);
-                command.Parameters.AddWithValue("@email", newEmail);
-
-                int rowsAffected = command.ExecuteNonQuery();
-
-                return Ok(new
-                {
-                    Success = rowsAffected > 0,
-                    Message = $"Email updated in {rowsAffected} row(s)"
-                });
-            }
-            catch (Exception ex)
-            {
-                return StatusCode(500, new
-                {
-                    Error = ex.Message,
-                    Details = ex.InnerException?.Message
-                });
-            }
-        }
-
         #region addictive methods
         private string GenerateJwtToken(Account account)
         {
