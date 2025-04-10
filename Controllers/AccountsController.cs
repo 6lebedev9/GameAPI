@@ -9,6 +9,7 @@ using Microsoft.IdentityModel.Tokens;
 using System.IdentityModel.Tokens.Jwt;
 using System.Text;
 using GameAPI.Data;
+using Microsoft.Data.SqlClient;
 
 namespace GameAPI.Controllers
 {
@@ -126,50 +127,77 @@ namespace GameAPI.Controllers
         #endregion
 
         #region Updating data
+
         [Authorize]
         [HttpPut("update-email")]
         public async Task<ActionResult<AuthResponse>> UpdateEmail(
-            [FromBody] UpdateEmailDto updateDto)
+    [FromBody] UpdateEmailDto updateDto)
         {
-            var tgIdClaim = User.FindFirstValue("TgId") ??
-                throw new InvalidOperationException("TgId claim not found");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            if (!long.TryParse(tgIdClaim, out var tgId))
-                return Unauthorized(AuthResponse.ErrorResponse("Invalid TgId in token"));
+            try
+            {
+                if (!long.TryParse(User.FindFirst("TgId")?.Value, out var tgId))
+                    return Unauthorized(AuthResponse.ErrorResponse("Invalid TgId in token"));
 
-            var token = await _context.Tokens
-                .FirstOrDefaultAsync(t =>
-                    t.TgToken == updateDto.TgToken &&
-                    t.TgId == tgId &&
-                    !t.IsUsed &&
-                    t.ExpiredAt > DateTime.UtcNow);
+                var token = await _context.Tokens
+                    .FirstOrDefaultAsync(t =>
+                        t.TgToken == updateDto.TgToken &&
+                        t.TgId == tgId &&
+                        !t.IsUsed &&
+                        t.ExpiredAt > DateTime.UtcNow);
 
-            if (token == null)
-                return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
+                if (token == null)
+                    return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
 
-            var accountIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-                throw new InvalidOperationException("NameIdentifier claim not found");
+                var accountId = int.Parse(User.FindFirstValue(ClaimTypes.NameIdentifier));
+                var account = await _context.Accounts
+                    .AsTracking()
+                    .FirstOrDefaultAsync(a => a.AccountId == accountId);
 
-            if (!int.TryParse(accountIdClaim, out var accountId))
-                return Unauthorized(AuthResponse.ErrorResponse("Invalid account ID"));
+                if (account == null)
+                    return NotFound(AuthResponse.ErrorResponse("Account not found"));
 
-            var account = await _context.Accounts.FindAsync(accountId);
-            if (account == null)
-                return NotFound(AuthResponse.ErrorResponse("Account not found"));
+                if (await _context.Accounts.AnyAsync(a => a.Email == updateDto.NewEmail && a.AccountId != accountId))
+                    return Conflict(AuthResponse.ErrorResponse("Email already in use"));
 
-            if (await _context.Accounts.AnyAsync(a => a.Email == updateDto.NewEmail))
-                return Conflict(AuthResponse.ErrorResponse("Email already in use"));
+                using var transaction = await _context.Database.BeginTransactionAsync();
 
-            account.Email = updateDto.NewEmail;
-            token.IsUsed = true;
+                try
+                {
+                    account.Email = updateDto.NewEmail;
+                    _context.Entry(account).Property(x => x.Email).IsModified = true;
 
-            var jwt = GenerateJwtToken(account);
-            account.Jwt = jwt;
-            account.JwtExpiry = DateTime.UtcNow.AddDays(1);
+                    token.IsUsed = true;
+                    _context.Entry(token).Property(x => x.IsUsed).IsModified = true;
 
-            await _context.SaveChangesAsync();
+                    var jwt = GenerateJwtToken(account);
+                    account.Jwt = jwt;
+                    account.JwtExpiry = DateTime.UtcNow.AddDays(1);
 
-            return Ok(AuthResponse.SuccessResponse(account, jwt));
+                    await _context.SaveChangesAsync();
+                    await transaction.CommitAsync();
+
+                    return Ok(AuthResponse.SuccessResponse(account, jwt));
+                }
+                catch (Exception ex)
+                {
+                    await transaction.RollbackAsync();
+                    Console.WriteLine($"Error updating email: {ex.Message}"); 
+                    return StatusCode(500, AuthResponse.ErrorResponse("Transaction failed"));
+                }
+            }
+            catch (DbUpdateException ex)
+            {
+                Console.WriteLine($"Database error: {ex.Message}"); 
+                return StatusCode(500, AuthResponse.ErrorResponse("Database update failed"));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Unexpected error: {ex.Message}");
+                return StatusCode(500, AuthResponse.ErrorResponse("Internal server error"));
+            }
         }
 
         [Authorize]
@@ -216,6 +244,40 @@ namespace GameAPI.Controllers
         }
         #endregion
 
+        [HttpPost("update-email-manual")]
+        public IActionResult UpdateEmailManual([FromQuery] int accountId, [FromQuery] string newEmail)
+        {
+            try
+            {
+                var connectionString = _context.Database.GetConnectionString();
+                using var connection = new SqlConnection(connectionString);
+                connection.Open();
+
+                using var command = new SqlCommand(
+                    "UPDATE Accounts SET Email = @email WHERE AccountId = @id",
+                    connection);
+
+                command.Parameters.AddWithValue("@id", accountId);
+                command.Parameters.AddWithValue("@email", newEmail);
+
+                int rowsAffected = command.ExecuteNonQuery();
+
+                return Ok(new
+                {
+                    Success = rowsAffected > 0,
+                    Message = $"Email updated in {rowsAffected} row(s)"
+                });
+            }
+            catch (Exception ex)
+            {
+                return StatusCode(500, new
+                {
+                    Error = ex.Message,
+                    Details = ex.InnerException?.Message
+                });
+            }
+        }
+
         #region addictive methods
         private string GenerateJwtToken(Account account)
         {
@@ -246,17 +308,4 @@ namespace GameAPI.Controllers
         #endregion
     }
 
-    public class UpdateAccountDto
-    {
-        [EmailAddress]
-        public string? NewEmail { get; set; }
-
-        public string? CurrentPassword { get; set; }
-
-        [MinLength(8)]
-        public string? NewPassword { get; set; }
-
-        [Compare("NewPassword", ErrorMessage = "Passwords do not match")]
-        public string? ConfirmNewPassword { get; set; }
-    }
 }

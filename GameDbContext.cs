@@ -1,5 +1,6 @@
 ﻿using GameAPI.Models;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
 
 namespace GameAPI.Data
@@ -26,6 +27,10 @@ namespace GameAPI.Data
                 });
 
                 entity.HasIndex(a => a.Email).IsUnique();
+                entity.Property(a => a.Email)
+                    .IsRequired()
+                    .HasMaxLength(50)
+                    .Metadata.SetAfterSaveBehavior(PropertySaveBehavior.Save);
                 entity.HasIndex(a => a.TgId).IsUnique();
 
                 entity.Property(a => a.Role).HasDefaultValue(1);

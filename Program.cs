@@ -134,7 +134,6 @@ if (app.Environment.IsDevelopment())
         options.DocumentTitle = "GameAPI (Debug Mode)";
     });
 }
-
 app.UseHttpsRedirection();
 app.UseRouting();
 app.UseAuthentication();
