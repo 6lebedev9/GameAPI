@@ -37,7 +37,9 @@ namespace GameAPI.Data
                 entity.Property(a => a.Banned).HasDefaultValue(false);
                 entity.Property(a => a.MCoins).HasDefaultValue(0);
                 entity.Property(a => a.MaxCharCount).HasDefaultValue(2);
-                entity.Property(a => a.CreatedAt).HasDefaultValueSql("GETUTCDATE()");
+                entity.Property(a => a.CreatedAt)
+                    .HasDefaultValueSql("GETUTCDATE()")
+                    .ValueGeneratedOnAdd();
                 entity.Property(a => a.FailedLoginAttempts).HasDefaultValue(0);
             });
 
