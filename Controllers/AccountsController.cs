@@ -128,41 +128,31 @@ namespace GameAPI.Controllers
 
         #region Updating data
 
-        //[Authorize] //test auth methods
         [HttpPut("update-email")]
-        public async Task<ActionResult<AuthResponse>> UpdateEmail(
-    [FromBody] UpdateEmailDto updateDto)
+        public async Task<ActionResult<AuthResponse>> UpdateEmail([FromBody] UpdateEmailDto updateDto)
         {
             if (!ModelState.IsValid)
                 return BadRequest(ModelState);
 
             try
             {
-                if (!long.TryParse(User.FindFirst("TgId")?.Value, out var tgId))
-                    return Unauthorized(AuthResponse.ErrorResponse("Invalid TgId in token"));
-
                 var token = await _context.Tokens
                     .FirstOrDefaultAsync(t =>
                         t.TgToken == updateDto.TgToken &&
-                        t.TgId == tgId &&
                         !t.IsUsed &&
                         t.ExpiredAt > DateTime.UtcNow);
 
                 if (token == null)
                     return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
 
-                var accountidchecker = User.FindFirstValue(ClaimTypes.NameIdentifier);
-                if (accountidchecker == null) { return NotFound(AuthResponse.ErrorResponse("Null account - not found")); }
-
-                var accountId = int.Parse(accountidchecker);
                 var account = await _context.Accounts
                     .AsTracking()
-                    .FirstOrDefaultAsync(a => a.AccountId == accountId);
+                    .FirstOrDefaultAsync(a => a.TgId == token.TgId);
 
                 if (account == null)
                     return NotFound(AuthResponse.ErrorResponse("Account not found"));
 
-                if (await _context.Accounts.AnyAsync(a => a.Email == updateDto.NewEmail && a.AccountId != accountId))
+                if (await _context.Accounts.AnyAsync(a => a.Email == updateDto.NewEmail && a.AccountId != account.AccountId))
                     return Conflict(AuthResponse.ErrorResponse("Email already in use"));
 
                 using var transaction = await _context.Database.BeginTransactionAsync();
@@ -187,13 +177,13 @@ namespace GameAPI.Controllers
                 catch (Exception ex)
                 {
                     await transaction.RollbackAsync();
-                    Console.WriteLine($"Error updating email: {ex.Message}"); 
+                    Console.WriteLine($"Error updating email: {ex.Message}");
                     return StatusCode(500, AuthResponse.ErrorResponse("Transaction failed"));
                 }
             }
             catch (DbUpdateException ex)
             {
-                Console.WriteLine($"Database error: {ex.Message}"); 
+                Console.WriteLine($"Database error: {ex.Message}");
                 return StatusCode(500, AuthResponse.ErrorResponse("Database update failed"));
             }
             catch (Exception ex)
@@ -203,47 +193,50 @@ namespace GameAPI.Controllers
             }
         }
 
-        //[Authorize] //test auth methods
         [HttpPut("update-password")]
-        public async Task<ActionResult<AuthResponse>> UpdatePassword(
-            [FromBody] UpdatePasswordDto updateDto)
+        public async Task<ActionResult<AuthResponse>> UpdatePassword([FromBody] UpdatePasswordDto updateDto)
         {
-            var tgIdClaim = User.FindFirstValue("TgId") ??
-                throw new InvalidOperationException("TgId claim not found");
+            if (!ModelState.IsValid)
+                return BadRequest(ModelState);
 
-            if (!long.TryParse(tgIdClaim, out var tgId))
-                return Unauthorized(AuthResponse.ErrorResponse("Invalid TgId in token"));
+            try
+            {
+                var token = await _context.Tokens
+                    .FirstOrDefaultAsync(t =>
+                        t.TgToken == updateDto.TgToken &&
+                        !t.IsUsed &&
+                        t.ExpiredAt > DateTime.UtcNow);
 
-            var token = await _context.Tokens
-                .FirstOrDefaultAsync(t =>
-                    t.TgToken == updateDto.TgToken &&
-                    t.TgId == tgId &&
-                    !t.IsUsed &&
-                    t.ExpiredAt > DateTime.UtcNow);
+                if (token == null)
+                    return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
 
-            if (token == null)
-                return BadRequest(AuthResponse.ErrorResponse("Invalid or expired token"));
+                var account = await _context.Accounts
+                    .FirstOrDefaultAsync(a => a.TgId == token.TgId);
 
-            var accountIdClaim = User.FindFirstValue(ClaimTypes.NameIdentifier) ??
-                throw new InvalidOperationException("NameIdentifier claim not found");
+                if (account == null)
+                    return NotFound(AuthResponse.ErrorResponse("Account not found"));
 
-            if (!int.TryParse(accountIdClaim, out var accountId))
-                return Unauthorized(AuthResponse.ErrorResponse("Invalid account ID"));
+                account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(updateDto.NewPassword);
+                token.IsUsed = true;
 
-            var account = await _context.Accounts.FindAsync(accountId);
-            if (account == null)
-                return NotFound(AuthResponse.ErrorResponse("Account not found"));
+                var jwt = GenerateJwtToken(account);
+                account.Jwt = jwt;
+                account.JwtExpiry = DateTime.UtcNow.AddDays(1);
 
-            account.PasswordHash = BCrypt.Net.BCrypt.HashPassword(updateDto.NewPassword);
-            token.IsUsed = true;
+                await _context.SaveChangesAsync();
 
-            var jwt = GenerateJwtToken(account);
-            account.Jwt = jwt;
-            account.JwtExpiry = DateTime.UtcNow.AddDays(1);
-
-            await _context.SaveChangesAsync();
-
-            return Ok(AuthResponse.SuccessResponse(account, jwt));
+                return Ok(AuthResponse.SuccessResponse(account, jwt));
+            }
+            catch (DbUpdateException ex)
+            {
+                Console.WriteLine($"Database error: {ex.Message}");
+                return StatusCode(500, AuthResponse.ErrorResponse("Database update failed"));
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine($"Unexpected error: {ex.Message}");
+                return StatusCode(500, AuthResponse.ErrorResponse("Internal server error"));
+            }
         }
         #endregion
 
