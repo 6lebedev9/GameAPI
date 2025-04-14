@@ -128,7 +128,7 @@ namespace GameAPI.Controllers
 
         #region Updating data
 
-        [Authorize]
+        //[Authorize] //test auth methods
         [HttpPut("update-email")]
         public async Task<ActionResult<AuthResponse>> UpdateEmail(
     [FromBody] UpdateEmailDto updateDto)
@@ -203,7 +203,7 @@ namespace GameAPI.Controllers
             }
         }
 
-        [Authorize]
+        //[Authorize] //test auth methods
         [HttpPut("update-password")]
         public async Task<ActionResult<AuthResponse>> UpdatePassword(
             [FromBody] UpdatePasswordDto updateDto)
