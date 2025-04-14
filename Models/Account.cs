@@ -45,5 +45,6 @@ namespace GameAPI.Models
         public bool IsAdmin => Role >= 10;
 
         public bool IsModerator => Role >= 2;
+        public List<Character> Characters { get; set; } = new List<Character>();
     }
 }

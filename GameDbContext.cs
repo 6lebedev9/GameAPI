@@ -14,7 +14,9 @@ namespace GameAPI.Data
 
         public DbSet<Account> Accounts { get; set; }
         public DbSet<Token> Tokens { get; set; }
-        
+
+        public DbSet<Character> Characters { get; set; }
+
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Account>(entity =>
@@ -54,6 +56,22 @@ namespace GameAPI.Data
                 entity.Property(t => t.ExpiredAt).IsRequired();
                 entity.Property(t => t.TgToken).IsRequired().HasMaxLength(5);
                 entity.Property(t => t.IsUsed).HasDefaultValue(false);
+            });
+
+            modelBuilder.Entity<Character>(entity =>
+            {
+                entity.ToTable(tb =>
+                {
+                    tb.HasCheckConstraint("CK_Chars_Exp", "Exp >= 0");
+                    tb.HasCheckConstraint("CK_Chars_Class", "CharClass IN ('Mage', 'Warrior', 'Rogue')");
+                });
+
+                entity.HasIndex(c => new { c.AccountId, c.CharName })
+                      .IsUnique()
+                      .HasFilter("IsDeleted = 0");
+
+                entity.Property(c => c.CharClass)
+                      .HasMaxLength(20);
             });
         }
     }
