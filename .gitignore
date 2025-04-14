@@ -1,2 +1,8 @@
 ﻿appsettings*.json
 !appsettings.sample.json
+/structure.txt
+/.vs
+/bin
+/obj
+/Properties
+/GameAPI.csproj.user

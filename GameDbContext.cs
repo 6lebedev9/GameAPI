@@ -14,7 +14,7 @@ namespace GameAPI.Data
 
         public DbSet<Account> Accounts { get; set; }
         public DbSet<Token> Tokens { get; set; }
-
+        
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
             modelBuilder.Entity<Account>(entity =>
