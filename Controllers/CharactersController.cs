@@ -5,6 +5,7 @@ using System.Security.Claims;
 using Microsoft.AspNetCore.Authorization;
 using GameAPI.Models;
 using GameAPI.Data;
+using Microsoft.Data.SqlClient;
 
 namespace GameAPI.Controllers
 {
@@ -42,7 +43,7 @@ namespace GameAPI.Controllers
         }
 
         [HttpPost]
-        public async Task<ActionResult<Character>> CreateCharacter(CharacterCreateDto dto)
+        public async Task<ActionResult<CharacterResponseDto>> CreateCharacter([FromBody] CharacterCreateDto dto)
         {
             var accountId = GetCurrentAccountId();
             var account = await _context.Accounts
@@ -52,11 +53,21 @@ namespace GameAPI.Controllers
             if (account == null)
                 return Unauthorized();
 
-            if (account.Characters.Count(c => !c.IsDeleted) >= account.MaxCharCount)
-                return BadRequest(new { Message = $"Maximum character limit reached ({account.MaxCharCount})" });
+            if (account.Characters.Count >= account.MaxCharCount)
+                return BadRequest("Maximum character limit reached");
 
-            if (!new[] { "Warrior", "Mage", "Rogue" }.Contains(dto.CharClass))
-                return BadRequest(new { Message = "Invalid character class" });
+            bool nameExists = await _context.Characters
+                .AnyAsync(c => c.AccountId == accountId &&
+                              c.CharName.ToLower() == dto.CharName.ToLower() &&
+                              !c.IsDeleted);
+
+            if (nameExists)
+            {
+                return Conflict(new ErrorResponse
+                {
+                    Message = $"Character name '{dto.CharName}' already exists"
+                });
+            }
 
             var character = new Character
             {
@@ -67,10 +78,34 @@ namespace GameAPI.Controllers
                 CreatedAt = DateTime.UtcNow
             };
 
-            _context.Characters.Add(character);
-            await _context.SaveChangesAsync();
+            try
+            {
+                _context.Characters.Add(character);
+                await _context.SaveChangesAsync();
+            }
+            catch (DbUpdateException ex) when (IsUniqueConstraintViolation(ex))
+            {
+                return Conflict(new ErrorResponse
+                {
+                    Message = $"Character name '{dto.CharName}' already exists"
+                });
+            }
 
-            return CreatedAtAction(nameof(GetCharacter), new { id = character.CharId }, character);
+            return Ok(new CharacterResponseDto
+            {
+                CharId = character.CharId,
+                AccountId = character.AccountId,
+                CharName = character.CharName,
+                CharClass = character.CharClass,
+                Exp = character.Exp,
+                CreatedAt = character.CreatedAt
+            });
+        }
+
+        private bool IsUniqueConstraintViolation(DbUpdateException ex)
+        {
+            return ex.InnerException is SqlException sqlEx &&
+                   (sqlEx.Number == 2601 || sqlEx.Number == 2627);
         }
 
         [HttpPut("{id}")]
