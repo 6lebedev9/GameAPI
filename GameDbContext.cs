@@ -2,6 +2,7 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Metadata;
 using Microsoft.EntityFrameworkCore.Metadata.Builders;
+using System.Runtime.InteropServices;
 
 namespace GameAPI.Data
 {
@@ -14,8 +15,10 @@ namespace GameAPI.Data
 
         public DbSet<Account> Accounts { get; set; }
         public DbSet<Token> Tokens { get; set; }
-
         public DbSet<Character> Characters { get; set; }
+        public DbSet<Effect> Effects { get; set; }
+        public DbSet<ItemBase> ItemBases { get; set; }
+        public DbSet<CharStat> CharStats { get; set; }
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
@@ -73,6 +76,25 @@ namespace GameAPI.Data
                 entity.Property(c => c.CharClass)
                       .HasMaxLength(20);
             });
+
+            modelBuilder.Entity<Effect>(entity =>
+            {
+                entity.ToTable("Effects");
+                entity.HasKey(e => e.Effect_Id);
+            });
+
+            modelBuilder.Entity<ItemBase>(entity =>
+            {
+                entity.ToTable("Item_Bases");
+                entity.HasKey(i => i.Item_Base_Id);
+            });
+
+            modelBuilder.Entity<CharStat>(entity =>
+            {
+                entity.ToTable("Char_Stat_Math");
+                entity.HasKey(c => c.Char_Stat_Id);
+            });
+
         }
     }
 }
